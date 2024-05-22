@@ -1,2 +1,3 @@
 pub mod simulations;
-mod tui;
+pub mod tui;
+pub mod errors;

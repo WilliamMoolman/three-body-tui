@@ -33,6 +33,7 @@ struct Body {
     dx: f64,
     dy: f64,
     icon: Icon,
+    trail: VecDeque<(f64, f64)>,
 }
 
 impl Display for Body {
@@ -66,17 +67,14 @@ impl Body {
             dx: rng.gen_range(-0.1..=0.1),
             dy: rng.gen_range(-0.1..=0.1),
             icon: Icon::new("☼", Body::COLOURS[id % 8]),
+            trail: VecDeque::new(),
         }
     }
 
-    fn get_trail(&self) -> Body {
-        Body {
-            mass: 0.0,
-            x: self.x,
-            y: self.y,
-            dx: 0.0,
-            dy: 0.0,
-            icon: Icon::new("·", self.icon.color),
+    fn add_trail(&mut self) {
+        self.trail.push_back((self.x, self.y));
+        if self.trail.len() > 50 {
+            self.trail.pop_front();
         }
     }
 
@@ -85,6 +83,7 @@ impl Body {
     }
 
     fn step(&mut self, force: (f64, f64), time: f64, drag: f64) {
+        self.add_trail();
         let (ddx, ddy) = (force.0 / self.mass, force.1 / self.mass);
         let (ddx, ddy) = (ddx.clamp(-0.1, 0.1), ddy.clamp(-0.1, 0.1));
 
@@ -131,12 +130,12 @@ fn ransac_centroid(points: &VecDeque<Body>) -> (f64, f64) {
 pub struct NBody {
     logger: Logger,
     entities: VecDeque<Body>,
-    trail: VecDeque<Body>,
     id_counter: usize,
     settings: SettingsBlock,
     speed: Rc<RefCell<Speed>>,
     drag: Rc<RefCell<Drag>>,
     gravity: Rc<RefCell<Gravity>>,
+    camera: (f64, f64),
 }
 
 impl Simulatable for NBody {
@@ -159,11 +158,11 @@ impl Simulatable for NBody {
             simulation: Box::new(NBody {
                 logger: logger.clone(),
                 entities: vec![Body::rand(0), Body::rand(1), Body::rand(2)].into(),
-                trail: VecDeque::new(),
                 id_counter: 3,
                 speed: speed.clone(),
                 gravity: gravity.clone(),
                 drag: drag.clone(),
+                camera: (0., 0.),
                 settings: SettingsBlock {
                     selected: 0,
                     settings: vec![speed.clone(), gravity.clone(), drag.clone()],
@@ -174,7 +173,6 @@ impl Simulatable for NBody {
 
     fn reset(&mut self) {
         self.entities = vec![Body::rand(0), Body::rand(1), Body::rand(2)].into();
-        self.trail = VecDeque::new();
         self.id_counter = 3;
     }
     fn handle_key_events(&mut self, key_event: KeyEvent) {
@@ -183,10 +181,6 @@ impl Simulatable for NBody {
         };
     }
     fn update(&mut self) {
-        // Create Trail
-        for e in &self.entities {
-            self.trail.push_back(e.get_trail());
-        }
         // Calculate forces
         let mut forces = vec![(0., 0.); self.entities.len()];
         for i in 0..self.entities.len() - 1 {
@@ -220,25 +214,27 @@ impl Simulatable for NBody {
 
         let centroid = ransac_centroid(&self.entities);
 
-        self.entities
-            .iter_mut()
-            .for_each(|e| e.x -= 0.1 * centroid.0);
-        self.entities
-            .iter_mut()
-            .for_each(|e| e.y -= 0.1 * centroid.1);
-        self.trail.iter_mut().for_each(|e| e.x -= 0.1 * centroid.0);
-        self.trail.iter_mut().for_each(|e| e.x -= 0.1 * centroid.0);
+        self.camera.0 = 0.9 * self.camera.0 + 0.1 * centroid.0;
+        self.camera.1 = 0.9 * self.camera.1 + 0.1 * centroid.1;
     }
     fn canvas_title(&self) -> &str {
         " N-Body Simulation "
     }
     fn canvas_bounds(&self) -> (f64, f64, f64, f64) {
-        (-100., 100., -100., 100.)
+        (
+            self.camera.0 - 100.,
+            self.camera.0 + 100.,
+            self.camera.1 - 100.,
+            self.camera.1 + 100.,
+        )
     }
     fn canvas_render(&self, ctx: &mut Context) {
-        self.entities
-            .iter()
-            .for_each(|e| ctx.print(e.x, e.y, e.icon.print()));
+        self.entities.iter().for_each(|e| {
+            e.trail
+                .iter()
+                .for_each(|t| ctx.print(t.0, t.1, "·".fg(e.icon.color)));
+            ctx.print(e.x, e.y, e.icon.print())
+        });
     }
     fn info_title(&self) -> &str {
         " Entity Info "

@@ -1,10 +1,8 @@
 use color_eyre::Result;
 
-mod errors;
-mod tui;
-
-use three_body_tui::simulations::NBody;
 use three_body_tui::simulations::Simulatable;
+use three_body_tui::simulations::NBody;
+use three_body_tui::{tui, errors};
 
 fn main() -> Result<()> {
     errors::install_hooks()?;
